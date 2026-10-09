@@ -9,7 +9,8 @@
 #
 # Safe to re-run. Installs to /opt/xgift, /etc/xgift, /var/lib/xgift with payments OFF,
 # and touches no other service except a validated, graceful Caddy reload that only
-# appends the XGift site block. Finish with: sudo /opt/xgift/finish-setup.sh
+# appends the XGift site block. The site is online at the end; then add your
+# private settings (X cookies, Stripe key, cards) with: sudo xgift-credentials
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "run as root (sudo)"; exit 1; }
 
@@ -72,56 +73,53 @@ exec sudo -u xgift /usr/bin/env XGIFT_PASSWORD_FILE=/etc/xgift/vault-password /o
 EOF
 chmod 0755 /usr/local/bin/xgift
 
-echo "== 6. finish-setup helper"
-cat > /opt/xgift/finish-setup.sh <<'EOF'
-#!/bin/bash
-# Run once:  sudo /opt/xgift/finish-setup.sh
-# Starts the interactive wizard (you type your X cookies, card, proxy, Stripe key),
-# then starts the website. Payments stay OFF until you enable them.
-set -euo pipefail
-[ "$(id -u)" = 0 ] || { echo "Run with sudo: sudo /opt/xgift/finish-setup.sh"; exit 1; }
-if [ -e /var/lib/xgift/vault.db ]; then
-  echo "A vault already exists at /var/lib/xgift/vault.db - setup was already done."
-  echo "Use 'xgift status', 'xgift put ...', 'xgift cards add' to change settings."
+echo "== 6. English settings helper (xgift-credentials)"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$HERE/xgift-credentials.sh" ]; then
+  install -o root -g root -m 0755 "$HERE/xgift-credentials.sh" /usr/local/bin/xgift-credentials
+elif [ -f /opt/xgift/deploy/xgift-credentials.sh ]; then
+  install -o root -g root -m 0755 /opt/xgift/deploy/xgift-credentials.sh /usr/local/bin/xgift-credentials
 else
-  echo "================================================================"
-  echo " XGift setup wizard (prompts are in Chinese). Quick guide:"
-  echo "  密码文件保存路径        password file  -> just press Enter"
-  echo "  X 凭据 auth_token / ct0 your X cookies"
-  echo "  支付卡                  card number, expiry, CVC, billing info"
-  echo "  代理                    proxy: choose 1 (direct) if x.com is reachable"
-  echo "  Stripe 公钥             the pk_live_ key"
-  echo "  商品目录                catalog: press Enter for the default"
-  echo "  是否生成站点配置文件？  generate site config? -> answer n"
-  echo "                          (already prepared in /etc/xgift/site.env)"
-  echo "================================================================"
-  cd /opt/xgift
-  sudo -u xgift /opt/xgift/bin/xgift setup --db /var/lib/xgift/vault.db --password-file /etc/xgift/vault-password
+  curl -fsSL https://raw.githubusercontent.com/mouno19/X-Gift/main/deploy/xgift-credentials.sh -o /usr/local/bin/xgift-credentials
+  chmod 0755 /usr/local/bin/xgift-credentials
 fi
-echo
-echo "== vault status"
-xgift status || true
-echo
-echo "== starting xgift service"
-systemctl enable xgift >/dev/null 2>&1 || true
-systemctl restart xgift
-sleep 3
-systemctl --no-pager --lines=5 status xgift || true
-echo
-curl -fsS http://127.0.0.1:8787/healthz && echo
-ORIGIN=$(grep '^XGIFT_ORIGIN=' /etc/xgift/site.env | cut -d= -f2-)
-echo
-echo "Redemption page : $ORIGIN"
-echo "Admin console   : $ORIGIN/admin   (user: admin)"
-echo "Admin password  : sudo cat /etc/xgift/admin-password"
-echo "BACK UP /etc/xgift/vault-password - without it the vault cannot be decrypted."
-EOF
-chmod 0750 /opt/xgift/finish-setup.sh
+# Older instructions referred to finish-setup.sh; keep it as a shim.
+printf '#!/bin/sh\nexec /usr/local/bin/xgift-credentials "$@"\n' > /opt/xgift/finish-setup.sh
+chmod 0755 /opt/xgift/finish-setup.sh
 
-echo "== 7. systemd unit (installed; enabled+started by finish-setup.sh once the vault exists)"
+echo "== 7. vault with non-secret defaults (X web Bearer/UA, direct network, default catalog)"
+if [ ! -e /var/lib/xgift/vault.db ]; then
+  [ -e /etc/xgift/vault-password ] && { echo "vault-password exists without a vault; refusing"; exit 1; }
+  sudo -u xgift sh -c 'umask 077; head -c 32 /dev/urandom | base64 | tr "+/" "-_" | tr -d "=\n" > /etc/xgift/vault-password; echo >> /etc/xgift/vault-password'
+  cat <<'JSON' | sudo -u xgift /opt/xgift/bin/xgift init --db /var/lib/xgift/vault.db --password-file /etc/xgift/vault-password
+{
+  "api-auth": {
+    "Authorization": "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
+    "UserAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36"
+  },
+  "proxy": {"outbounds": [{"type": "direct", "tag": "direct"}]},
+  "catalog": {
+    "merchant": "acct_1Ika5JA3KZ32dPo1",
+    "currency": "bdt",
+    "plans": [
+      {"months": 3, "amount": 30000, "product": "prod_TJXJtpzqCpI36N"},
+      {"months": 6, "amount": 60000, "product": "prod_TJXKKNJwZJIhCM"}
+    ]
+  }
+}
+JSON
+else
+  echo "vault already exists - keeping it"
+fi
+
+echo "== 7b. systemd unit (started now; payments stay OFF)"
 install -o root -g root -m 0644 /opt/xgift/deploy/xgift.service /etc/systemd/system/xgift.service
 systemctl daemon-reload
-systemctl is-enabled xgift || true
+systemctl enable xgift >/dev/null 2>&1
+systemctl restart xgift
+sleep 3
+systemctl is-active xgift
+curl -fsS http://127.0.0.1:8787/healthz; echo
 
 echo "== 8. Caddy site block"
 CF=/etc/caddy/Caddyfile
@@ -172,5 +170,7 @@ fi
 systemctl is-active caddy
 
 echo "== done"
-echo "Next: sudo /opt/xgift/finish-setup.sh   (enter your X cookies, card, proxy, Stripe key)"
+echo "Site: https://$HOST  (admin: https://$HOST/admin, user admin, password: sudo cat /etc/xgift/admin-password)"
+echo "Next: sudo xgift-credentials   (add X cookies, Stripe key and cards; then turn payments on)"
+echo "BACK UP /etc/xgift/vault-password - without it the vault cannot be decrypted."
 ls -la /opt/xgift /opt/xgift/bin /etc/xgift /var/lib/xgift

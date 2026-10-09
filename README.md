@@ -53,20 +53,22 @@ Open http://127.0.0.1:4173 for the redemption page and http://127.0.0.1:4173/adm
 
 ## Quick install on Ubuntu (server already running Caddy)
 
-If your server already has Caddy installed from the official package, the installer does steps 2–5 below for you using the prebuilt [release](https://github.com/mouno19/X-Gift/releases) binaries:
+If your server already has Caddy installed from the official package, the installer does steps 2–5 below for you using the prebuilt [release](https://github.com/mouno19/X-Gift/releases) binaries. The site is online when it finishes; you then add your private settings with English prompts:
 
 ```sh
 curl -fLo /tmp/xgift-linux-amd64-v1.0.0.tar.gz https://github.com/mouno19/X-Gift/releases/download/v1.0.0/xgift-linux-amd64-v1.0.0.tar.gz
 curl -fLo /tmp/install-ubuntu.sh https://raw.githubusercontent.com/mouno19/X-Gift/main/deploy/install-ubuntu.sh
 sudo bash /tmp/install-ubuntu.sh xp.example.com      # your hostname, already pointing at the server
-sudo /opt/xgift/finish-setup.sh                      # wizard: X cookies, card, proxy, Stripe key; then starts the site
+sudo xgift-credentials                               # menu: X cookies, Stripe key, cards, status, payments on/off
 ```
 
 - **Paths and service:** it installs to `/opt/xgift`, `/etc/xgift` and `/var/lib/xgift`, and runs everything under a dedicated `xgift` system user.
-- **Payments start off:** `XGIFT_PAYMENTS_ENABLED=false` is written to `/etc/xgift/site.env`.
+- **Vault defaults:** the encrypted vault is created with only non-secret defaults: the public X web-app `Authorization` header and User-Agent, a direct network connection, and the default X Premium catalog (BDT).
+- **Payments start off:** `XGIFT_PAYMENTS_ENABLED=false` is written to `/etc/xgift/site.env`. Turn them on from the `xgift-credentials` menu once `Show status` reports every record as verified.
 - **Caddy:** it adds one site block to `/etc/caddy/Caddyfile` after taking a timestamped backup. It validates the config before a graceful reload, and no other site is touched.
 - **No domain yet?** Use `<name>.<server-ip-with-dashes>.sslip.io`, for example `xgift.203-0-113-10.sslip.io`.
 - **Behind Cloudflare?** The installer's site block takes the client IP from the direct connection. If you proxy through Cloudflare, use the `deploy/Caddyfile` template instead.
+- **Pricing region:** X quotes prices in the currency of the network exit. The default catalog is in BDT, so a server outside Bangladesh needs a Bangladesh proxy (`xgift put --name proxy`) or a catalog in the local currency (`xgift put --name catalog`).
 - **After installing:** run `xgift status`, `xgift cards list` and the other CLI commands as any sudo user. To read the admin password, run `sudo cat /etc/xgift/admin-password`.
 
 ## Deployment guide
