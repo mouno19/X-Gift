@@ -17,3 +17,4 @@ __pycache__/
 .cloudflare/
 node_modules/
 .artifacts/
+/dist/

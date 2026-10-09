@@ -5,6 +5,7 @@
   "scripts": {
     "build": "tsc --noEmit && node frontend/scripts/build.mjs",
     "check": "tsc --noEmit",
+    "test": "node --test frontend/tests/*.test.mjs",
     "preview": "node frontend/scripts/preview.mjs",
     "audit:ui": "node frontend/scripts/lighthouse.mjs"
   },

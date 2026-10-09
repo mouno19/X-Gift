@@ -1,26 +1,30 @@
 # XGift
 
-X (Twitter) Premium 礼品兑换平台。你生成兑换码发给用户，用户在网页上输入兑换码和自己的 X 用户名，系统自动完成 Premium 赠送的下单与付款。
+**English** | [简体中文](README.zh-CN.md)
 
-- **兑换页**：用户自助兑换，实时显示处理进度
-- **管理后台**：生成/停用兑换码、批次文件夹、统计面板、订单状态
-- **安全**：凭据逐条 AES-256-GCM 加密存储，付款前逐项校验金额与商户，付款确认只提交一次
+An X (Twitter) Premium gift-redemption platform. You generate redemption codes and hand them to your users; a user opens the website, enters a code plus their own X username, and the system automatically places and pays for the Premium gift order.
 
-## 截图
+- **Redemption page**: self-service redemption with live progress updates
+- **Admin console**: generate/revoke codes, batch folders, a statistics dashboard, and order status
+- **Security**: every credential is stored individually with AES-256-GCM encryption; amount and merchant are verified item by item before paying, and a payment confirmation is only ever submitted once
 
-以下截图来自本地模拟预览（全部为示例数据）：
+> This repository is based on [mizorewww/x_gift_bot](https://github.com/mizorewww/x_gift_bot) (MIT License). The original Chinese documentation is preserved in [README.zh-CN.md](README.zh-CN.md). The web UI text is in Chinese, as in the upstream project.
 
-| 兑换页 | 管理页（统计概览） |
+## Screenshots
+
+The screenshots below come from the local mock preview (all data is synthetic):
+
+| Redemption page | Admin console (statistics overview) |
 |---|---|
-| ![兑换页](docs/screenshots/redeem-light.png) | ![管理页 · 浅色](docs/screenshots/admin-light.png) |
+| ![Redemption page](docs/screenshots/redeem-light.png) | ![Admin · light](docs/screenshots/admin-light.png) |
 
-管理页深色模式：
+Admin console in dark mode:
 
-![管理页 · 深色](docs/screenshots/admin-dark.png)
+![Admin · dark](docs/screenshots/admin-dark.png)
 
-## 本地预览（不写任何真实配置）
+## Local preview (no real configuration needed)
 
-想先看看界面？只需要 Node.js 22+：
+Want to look at the interface first? You only need Node.js 22.19+:
 
 ```sh
 npm ci
@@ -28,139 +32,169 @@ npm run build
 npm run preview
 ```
 
-打开 http://127.0.0.1:4173 是兑换页，http://127.0.0.1:4173/admin 是管理后台。所有数据都是内存示例，不连接真实服务。在兑换页输入 `XG-` 加 48 个字母 `A` 可以演示完整成功流程。
+Open http://127.0.0.1:4173 for the redemption page and http://127.0.0.1:4173/admin for the admin console. All data is in-memory sample data and nothing connects to real services. On the redemption page, enter `XG-` followed by 48 letters `A` to see the complete success flow.
 
-## 部署教程
+## Repository layout
 
-### 第一步：准备这些东西
+| Path | Contents |
+|---|---|
+| `cmd/xgift` | Admin CLI: setup wizard, vault management, card pool, proxy checks |
+| `cmd/xgift-web` | The redemption website + admin console server |
+| `cmd/xpg` | `xpg`, a standalone gift *link* generator site (see [docs/xpg.md](docs/xpg.md)) |
+| `internal/checkout` | X API / Stripe checkout engine, card × node rotation, reconciliation |
+| `internal/site` | HTTP server, redemption queue, admin APIs, embedded front-end assets |
+| `internal/vault` | AES-256-GCM encrypted SQLite vault |
+| `internal/proxy` | sing-box based outbound/proxy pool |
+| `internal/chrome` | macOS Chrome cookie import |
+| `internal/xpg` | Server for the standalone link generator |
+| `frontend/` | React 19 + MUI 7 sources, build/preview scripts and tests |
+| `deploy/` | systemd units, Caddyfile template, env file examples |
+| `docs/` | Payment outbound pool, regeneration and xpg documentation |
 
-部署前请先准备好以下四样东西，配置向导会逐项询问：
+## Deployment guide
 
-1. **X 登录 Cookie**（`auth_token` 和 `ct0`）：在浏览器登录 x.com 后，按 F12 打开开发者工具 → Application（应用）→ Cookies → `https://x.com`，复制这两项的值。这是系统以你的 X 账号身份发起赠送的凭据。
-2. **用于付款的银行卡（一张或多张）**：卡号、有效期、CVC，以及发卡行登记的持卡人姓名、账单邮箱和账单国家（两位代码，如 `BD`）。多张卡会在服务端加密保存并随机轮换，新卡可复用同一账单资料。请只填真实信息。
-3. **代理（可选）**：服务器能直接访问 x.com 就选「直连」；否则准备一个代理节点。支持 sing-box 的任意 outbound 类型（anytls、socks、http、shadowsocks、vmess、vless、trojan 等），也可以直接粘贴完整 sing-box 配置。
-4. **Stripe 公钥**：X 结账页面使用的 `pk_live_` 开头公钥。使用默认 X Premium 目录时向导会说明；它与商户、商品、价格一起保存在「目录」配置中，也可以完全自定义。
+### Step 1: Prepare the following
 
-网络路径独立配置：X 账号与资格检查始终直连；生成付款链接所需的地区报价校验与创建链接使用同一个 `proxy` 出口，避免币种和金额因地区不同而变化；X 请求不读取环境代理；Stripe 可使用包含 `direct` 的 `payment-outbounds` 节点池。连接故障触发 30 分钟冷却，安全查询最多尝试 3 个出口；付款确认不会自动重放。未配置或空数组时，新订单直连。Stripe 不读取环境代理。详见 [付款节点池配置](docs/payment-outbounds.md)。直接在浏览器打开 Stripe 链接时使用浏览器网络。
+Have these four things ready before deploying — the setup wizard asks for each of them:
 
-另外需要：一台 Linux 服务器、一个指向该服务器的域名、服务器上安装 Go 1.27+（或在自己电脑上构建后上传二进制）。
+1. **X login cookies** (`auth_token` and `ct0`): log in to x.com in your browser, press F12 to open DevTools → Application → Cookies → `https://x.com`, and copy these two values. These are the credentials the system uses to send gifts as your X account.
+2. **Payment card(s) (one or more)**: card number, expiry, CVC, plus the cardholder name registered with the issuing bank, the billing e-mail and the billing country (two-letter code, e.g. `BD`). Multiple cards are stored encrypted on the server and rotated randomly; new cards can reuse the same billing profile. Only enter genuine information.
+3. **Proxy (optional)**: if the server can reach x.com directly, choose "direct"; otherwise prepare a proxy node. Any sing-box outbound type is supported (anytls, socks, http, shadowsocks, vmess, vless, trojan, …), or you can paste a complete sing-box configuration.
+4. **Stripe publishable key**: the `pk_live_…` key used by the X checkout page. The wizard explains this when you use the default X Premium catalog; the key is saved in the "catalog" configuration together with the merchant, product and prices, and everything can be customised.
 
-### 第二步：构建
+Network paths are configured independently: the X account and eligibility checks always go direct; the regional price check required to create a payment link and the link creation itself share the same `proxy` exit, so that currency and amount do not change between regions; X requests never read environment proxies; Stripe can use a `payment-outbounds` node pool that may include `direct`. Connection failures trigger a 30-minute cooldown, safe read queries try at most 3 exits, and payment confirmations are never replayed automatically. When the pool is not configured or is an empty array, new orders go direct. Stripe never reads environment proxies. See [payment outbound pool configuration](docs/payment-outbounds.md) for details. When you open a Stripe link directly in a browser, the browser's own network is used.
+
+You will also need a Linux server, a domain pointing at that server, and Go 1.27+ on the server (or build on your own machine and upload the binaries).
+
+### Step 2: Build
 
 ```sh
-git clone https://github.com/mizorewww/x_gift_bot.git
-cd x_gift_bot
-npm ci && npm run build        # 构建前端（只需一次，产物已随仓库提交时可跳过）
+git clone https://github.com/mouno19/X-Gift.git
+cd X-Gift
+npm ci && npm run build        # build the front end (assets are committed, so this is optional)
 go build -tags with_quic,with_utls -o bin/xgift ./cmd/xgift
 go build -tags with_quic,with_utls -o bin/xgift-web ./cmd/xgift-web
+go build -tags with_quic,with_utls -o bin/xpg ./cmd/xpg   # optional standalone link generator
 ```
 
-### 第三步：运行配置向导
+`go-sqlite3` uses cgo, so a C compiler (`gcc`) must be available when building.
+
+### Step 3: Run the setup wizard
 
 ```sh
 ./bin/xgift setup
 ```
 
-向导会一步步引导你完成配置，全程有中文提示：
+The wizard walks you through the configuration step by step (its prompts are in Chinese):
 
-1. **密码文件** — 自动生成一个随机密码用于加密保管库，保存在你指定的路径（默认 `sqlite/vault-password`，仅本人可读）。**请务必备份这个文件，丢失后所有加密数据无法恢复。**
-2. **X 凭据** — 粘贴第一步准备的两个 Cookie。
-3. **支付卡** — 输入卡信息和账单信息（卡号会自动校验）。想启用多卡轮换，向导完成后用 `xgift cards add` 追加更多卡，缺少的账单字段会自动继承。
-4. **代理** — 选直连、按提示填 AnyTLS 节点，或粘贴 sing-box 配置；保存前会实际启动验证配置是否有效。
-5. **Stripe 公钥** — 粘贴 `pk_live_` 公钥。
-6. **商品目录** — 直接回车使用 X Premium 默认目录（3/6 个月套餐），或自定义商户、币种和套餐。
-7. **站点配置** — 输入你的域名（如 `https://xp.example.com`），向导会生成 `site.env` 和随机的后台管理员密码（只显示一次，同时保存在文件里）。
+1. **Password file** — generates a random password used to encrypt the vault and saves it at the path you choose (default `sqlite/vault-password`, readable only by you). **Back this file up — if it is lost, none of the encrypted data can be recovered.**
+2. **X credentials** — paste the two cookies from step 1.
+3. **Payment card** — enter the card and billing details (the card number is validated automatically). To enable multi-card rotation, add more cards with `xgift cards add` after the wizard; missing billing fields are inherited automatically.
+4. **Proxy** — choose direct, fill in an AnyTLS node as prompted, or paste a sing-box configuration; it is actually started and validated before being saved.
+5. **Stripe publishable key** — paste the `pk_live_` key.
+6. **Product catalog** — press Enter to use the default X Premium catalog (3/6-month plans), or customise merchant, currency and plans.
+7. **Site configuration** — enter your domain (e.g. `https://xp.example.com`); the wizard generates `site.env` and a random admin password (shown only once and also saved to a file).
 
-完成后运行 `./bin/xgift status`，六条记录全部显示 `verified` 即为成功。
+Then run `./bin/xgift status`; when all six records show `verified`, setup succeeded.
 
-### 第四步：启动网站
+### Step 4: Start the website
 
-把向导生成的 `site.env`、`admin-password`、`vault-password` 放到安全目录（生产建议 `/etc/xgift/`，权限 0600），然后：
+Put the generated `site.env`, `admin-password` and `vault-password` in a safe directory (in production `/etc/xgift/` with mode 0600 is recommended), then:
 
 ```sh
-sudo systemctl link $PWD/deploy/xgift.service   # 或直接复制到 /etc/systemd/system/
-# 编辑 deploy/xgift.service 中的路径使其与你的安装位置一致
+sudo systemctl link $PWD/deploy/xgift.service   # or copy it to /etc/systemd/system/
+# edit the paths in deploy/xgift.service to match your installation
 sudo systemctl enable --now xgift
 ```
 
-`site.env` 各字段含义：
+`site.env` fields:
 
-| 字段 | 说明 |
+| Field | Description |
 |---|---|
-| `XGIFT_ORIGIN` | 站点完整域名（`https://` 开头） |
-| `XGIFT_LISTEN` | 监听地址，只能回环，如 `127.0.0.1:8787` |
-| `XGIFT_DATA_DIR` | 数据目录（vault.db、site.db 所在） |
-| `XGIFT_PASSWORD_FILE` | 保管库密码文件路径 |
-| `XGIFT_ADMIN_PASSWORD_FILE` | 后台密码文件路径 |
-| `XGIFT_PAYMENTS_ENABLED` | `true` 开放充值，`false` 暂停（不消耗兑换码） |
+| `XGIFT_ORIGIN` | Full site origin (starting with `https://`) |
+| `XGIFT_LISTEN` | Listen address, loopback only, e.g. `127.0.0.1:8787` |
+| `XGIFT_DATA_DIR` | Data directory (where `vault.db` and `site.db` live) |
+| `XGIFT_PASSWORD_FILE` | Path to the vault password file |
+| `XGIFT_ADMIN_PASSWORD_FILE` | Path to the admin password file |
+| `XGIFT_PAYMENTS_ENABLED` | `true` opens redemptions, `false` pauses them (codes are not consumed) |
+| `XGIFT_TURNSTILE_SITE_KEY` / `XGIFT_TURNSTILE_SECRET_FILE` | Optional: set both to enable server-verified Cloudflare Turnstile on public submissions |
 
-### 第五步：配置 HTTPS 反向代理
+### Step 5: Configure an HTTPS reverse proxy
 
-程序只监听本机端口，需要 Caddy（或任意反向代理）提供 HTTPS。`deploy/Caddyfile` 是模板，把 `xp.example.com` 替换成你的域名后放到 Caddy 配置目录并 reload 即可。模板默认只放行 Cloudflare 回源 IP，不用 Cloudflare 时删掉 `@cloudflare` 相关段、保留 `reverse_proxy` 即可。
+The program only listens on a local port, so Caddy (or any reverse proxy) must provide HTTPS. `deploy/Caddyfile` is a template: replace `xp.example.com` with your domain, put it in Caddy's configuration directory and reload. By default the template only admits Cloudflare origin IPs; if you do not use Cloudflare, remove the `@cloudflare` sections and keep the `reverse_proxy`.
 
-验证：
+Verify:
 
 ```sh
-curl https://你的域名/healthz     # {"ok":true,...} 即成功
+curl https://your-domain/healthz     # {"ok":true,...} means success
 ```
 
-### 第六步：开始使用
+### Step 6: Start using it
 
-浏览器打开 `https://你的域名/admin`，输入用户名 `admin` 和向导生成的密码：
+Open `https://your-domain/admin` in a browser and log in with user `admin` and the password generated by the wizard:
 
-1. 在「生成兑换码」选套餐、数量、批次名，点生成，复制或下载兑换码发给用户。
-2. 顶部「统计概览」随时查看兑换进度和成功率。
-3. 用户打开 `https://你的域名`，输入兑换码和 X 用户名即可完成充值。
+1. In "Generate codes" choose a plan, a quantity and a batch name, click generate, then copy or download the codes and send them to your users.
+2. The "Statistics overview" at the top shows redemption progress and success rate at any time.
+3. Users open `https://your-domain`, enter their code and X username, and the top-up completes.
 
-## 日常维护
+## Day-to-day maintenance
 
 ```sh
-./bin/xgift status              # 检查所有加密记录是否完好
-./bin/xgift check               # 测试代理能否访问 x.com
-./bin/xgift import-chrome       # macOS：从本机 Chrome 重新导入 X Cookie（过期时用）
+./bin/xgift status              # check that every encrypted record is intact
+./bin/xgift check               # test that the proxy can reach x.com
+./bin/xgift import-chrome       # macOS: re-import the X cookies from local Chrome (when they expire)
 ```
 
-更新配置用 `put`（从标准输入读取新值）：
+Update configuration with `put` (reads the new value from standard input):
 
 ```sh
-./bin/xgift cards list                                     # 查看卡池和当前轮换组合（只显示尾号）
+./bin/xgift cards list                                     # show the card pool and current rotation combo (last 4 digits only)
 echo '{"number":"...","exp_month":"05","exp_year":"2031","cvc":"123"}' | ./bin/xgift cards add
-echo '新的ct0等JSON' | ./bin/xgift put --name cookies      # 还有 card / cards / proxy / api-auth
-echo 'pk_live_新公钥' | ./bin/xgift put --name stripe-key
+echo 'new ct0 etc. JSON' | ./bin/xgift put --name cookies   # also card / cards / proxy / api-auth
+echo 'pk_live_new_key' | ./bin/xgift put --name stripe-key
 echo '{"merchant":"acct_...","currency":"bdt","plans":[...]}' | ./bin/xgift put --name catalog
 ```
 
-付款卡按「卡 × 节点」组合随机轮换：每 3 个连续订单使用同一组合；任意订单被拒后立即换组合，被拒的那张卡进入 30 分钟冷却（其他卡继续轮换），补单也走同一逻辑。支付方明确 `do_not_try_again` 时该卡永久封锁直到显式解除。`cards add` 追加或更新（同卡号替换），`cards remove --last4 1234` 移除，`cards rotate` 立即结束当前组合，`cards unblock` 清除冷却与永久封锁。
+Payment cards rotate randomly by "card × node" combination: every 3 consecutive orders use the same combination; after any decline the combination is changed immediately and the declined card enters a 30-minute cooldown (other cards keep rotating); manual recovery follows the same logic. When the payment processor explicitly returns `do_not_try_again`, that card is blocked permanently until explicitly unblocked. `cards add` adds or updates a card (same number replaces), `cards remove --last4 1234` removes one, `cards rotate` ends the current combination immediately, and `cards unblock` clears cooldowns and permanent blocks.
 
-## 常见问题
+## FAQ
 
-**密码文件丢了怎么办？** 无法恢复。加密数据全部作废，需要删除 `vault.db` 后重新运行 `xgift setup`。请把它和数据库一起备份。
+**I lost the password file — what now?** It cannot be recovered. All encrypted data is void; delete `vault.db` and run `xgift setup` again. Back it up together with the databases.
 
-**X Cookie 过期了？** macOS 上用 `./bin/xgift import-chrome` 一键刷新；其他系统重新从浏览器复制后用 `put --name cookies` 更新。
+**The X cookies expired?** On macOS run `./bin/xgift import-chrome` to refresh them in one step; on other systems copy them from the browser again and update with `put --name cookies`.
 
-**想暂停充值？** 把 `site.env` 里 `XGIFT_PAYMENTS_ENABLED` 改为 `false` 并重启服务。用户兑换会被婉拒，兑换码不消耗。
+**How do I pause top-ups?** Set `XGIFT_PAYMENTS_ENABLED` in `site.env` to `false` and restart the service. Redemptions are politely declined and codes are not consumed.
 
-**付款被拒怎么办？** 明确拒付会显示失败说明并阻止重复提交，不再显示自动核实。网页和 CLI 在同一个 `checkout.lock` 下执行付款，提交间隔至少 30 秒，重启仍保留间隔。付款按「卡 × 节点」组合随机轮换，每 3 个连续订单使用同一组合；普通拒付会立即结束当前组合，并**先冷却该出口节点及其共享 IP（30 分钟）**，同一张卡马上换其他节点继续付款；只有同一张卡在两个不同节点都被拒，才冷却整卡 30 分钟。其他卡继续轮换，下一次提交（含补单）自动换到新的组合，不因连续次数暂停全站。支付端明确返回 `do_not_try_again` 时只永久封锁被拒的那张卡；仅当所有卡都被永久封锁时才暂停全站，可用 `xgift cards unblock` 显式解除（同时清除冷却，不能通过补单确认框解除）。后台补单页会实时显示每张卡的可用/冷却状态和当前组合。该命令不付款，也不会修改 `XGIFT_PAYMENTS_ENABLED`。手动完成原账单后，可查询原订单以核对成功状态。
+**What happens when a payment is declined?** An explicit decline shows a failure explanation and blocks resubmission; automatic verification is no longer shown. The web site and CLI run payments under the same `checkout.lock`, with at least 30 seconds between submissions, and the interval survives restarts. Cards rotate by "card × node" combination, 3 consecutive orders per combination; an ordinary decline ends the current combination immediately and **first cools down that exit node and its shared IP (30 minutes)**, so the same card can continue on another node. Only when the same card is declined on two different nodes is the whole card cooled down for 30 minutes. Other cards keep rotating and the next submission (including recovery) automatically moves to a new combination; consecutive declines never pause the whole site. When the processor explicitly returns `do_not_try_again`, only that card is permanently blocked; the site pauses only when every card is permanently blocked, and `xgift cards unblock` lifts this explicitly (also clearing cooldowns — it cannot be lifted from the recovery confirmation dialog). The admin recovery page shows each card's available/cooling status and the current combination in real time. The command never pays and never changes `XGIFT_PAYMENTS_ENABLED`. After completing the original bill manually, you can look up the original order to verify its success status.
 
-**付款结果不明怎么办？** 系统宁可标记「待核实」也不会重复扣款。用户用原兑换码点「重新检查并继续兑换」即可自动核对，确认成功后自动补上状态。
+**What if a payment outcome is unknown?** The system would rather mark an order "pending verification" than charge twice. The user clicks "Re-check and continue redemption" with the original code to reconcile automatically; once success is confirmed the status is filled in.
 
-**升级程序？** 重新构建两个二进制，备份数据目录和密码文件，替换后 `systemctl restart xgift`。不要覆盖线上数据库。
+**How do I upgrade?** Rebuild the binaries, back up the data directory and password files, replace the binaries and run `systemctl restart xgift`. Never overwrite the live databases.
 
-## 数据与安全
+## Data and security
 
-- `vault.db`：所有敏感信息（Cookie、卡、代理、订单）逐条 AES-256-GCM 加密，密钥由密码文件派生。没有密码文件谁也读不了。
-- `site.db`：兑换码只存摘要和尾号，不存明文；用户名、状态为明文。请限制文件权限。
-- 所有密钥文件均为 0600（仅本人可读）；后台使用 HTTPS Basic Auth；接口有限流和同源校验。
+- `vault.db`: all sensitive data (cookies, cards, proxies, orders) is encrypted record by record with AES-256-GCM; the key is derived from the password file. Without the password file nobody can read it.
+- `site.db`: redemption codes are stored only as digests plus their last characters, never in plain text; usernames and statuses are plain text. Restrict the file permissions.
+- All secret files are 0600 (owner-readable only); the admin console uses HTTPS Basic Auth; the APIs are rate-limited and enforce same-origin checks.
 
-### 管理员手动补单
+### Admin manual recovery
 
-登录 `/admin`，使用「预览并补单」查看所有 `review` 订单、每笔金额和当前轮换卡尾号，勾选确认后点击「确认付款并启动补单」。补单与普通付款共用同一套卡 × 节点轮换逻辑：被拒订单会换到新组合，同一批次的后续订单继续沿用新组合。此操作会发起真实付款，独立于公开充值入口的 `XGIFT_PAYMENTS_ENABLED` 开关；预览、状态查询、部署或服务重启均不会启动付款。预览有效期为 10 分钟，卡池配置或订单内容发生变化时必须重新预览。
+Log in to `/admin` and use "Preview and recover" to see every `review` order, each amount and the last four digits of the current rotation card; tick the confirmation and click "Confirm payment and start recovery". Recovery shares the card × node rotation logic with normal payments: a declined order moves to a new combination and subsequent orders in the same batch keep using it. **This performs real payments** and is independent of the public `XGIFT_PAYMENTS_ENABLED` switch; previews, status queries, deployments and service restarts never start a payment. A preview is valid for 10 minutes and must be redone when the card pool or order contents change.
 
-补单在服务器后台串行执行，订单之间至少等待 30 秒，并保留全局付款间隔。每批每单最多尝试一次；已付款只同步结果，未知付款结果、银行验证、禁止重试指令和不匹配的账单不会重付。有效会话会复用并重新核验商户、客户、套餐、金额及未收款/未授权金额证据。旧会话失效时，管理员必须确认已核对原订单未扣款；系统还要求原始明确拒付、对应的失败查询记录，以及再次通过的账号资格和价格检查，才会归档旧订单并生成新链接。未知付款结果、禁止重试指令不会因该确认而放行。每个原会话最多允许 3 次人工重试。普通拒付不再累计触发全站暂停；支付方明确禁止重试的暂停不能从此按钮解除。
+Recovery runs serially in the server background, waiting at least 30 seconds between orders and keeping the global payment interval. Each order is attempted at most once per batch; already-paid orders only sync their result, and unknown outcomes, bank verification, do-not-retry instructions and mismatched bills are never repaid. A valid session is reused after re-verifying merchant, customer, plan, amount and evidence of uncollected/unauthorised amounts. When an old session has expired, the admin must confirm that the original order was not charged; the system additionally requires the original explicit decline, the matching failed lookup record, and freshly passed account-eligibility and price checks before archiving the old order and generating a new link. Unknown outcomes and do-not-retry instructions are never released by that confirmation. Each original session allows at most 3 manual retries.
 
-「停止后续订单」会让当前订单完成核实后停止。关闭浏览器不影响任务；服务重启会将运行中的任务标记为中断，不会自动恢复扣款。重新预览后，结果不明的原付款仍被排除。任务及历史记录保存在加密 vault 的 `admin-recovery:*`，原付款记录保存在 `manual-previous:*`，核验依据保存在 `manual-preflight:*`，诊断错误保存在 `manual-recovery-error:*`。页面仅显示卡尾号，不接收卡号或安全码。
+"Stop remaining orders" lets the current order finish verification and then stops. Closing the browser does not affect the job; a service restart marks a running job as interrupted and never resumes charging automatically. Jobs and history are stored in the encrypted vault under `admin-recovery:*`, original payment records under `manual-previous:*`, verification evidence under `manual-preflight:*` and diagnostic errors under `manual-recovery-error:*`. The page only shows card last-four digits and never accepts card numbers or security codes.
 
+"Look up codes by customer / single recovery" in the admin console accepts an X username, reads bound orders across batches, decrypts and verifies the full code, and shows the current payment link. "View code / recover" in the code list opens the same detail view. Historical codes stored only as hashes cannot be restored, but single recovery uses the order ID directly and does not depend on the plaintext code.
 
-管理页的「按客户查卡密 / 单独补单」支持输入 X 用户名，跨批次读取绑定订单、解密并验证完整卡密，查看当前付款链接。兑换码列表的「查看卡密 / 补单」打开同一详情。历史仅存哈希的卡密不能还原，但单独补单直接使用订单 ID，不依赖卡密明文。
+"Generate recovery link only" and "Single recovery" create previews in `links` and `pay` mode respectively; the former never calls card tokenisation or payment confirmation on the server and does not lift payment protection. Both modes only handle the customer bound to the preview. Expired-bill replacement uses an atomic vault transaction to store a `replacement-original:<old session>` audit and install the new order record. A valid unpaid link is reused directly; a newly generated link can be viewed in the customer details. Server restarts never continue a job automatically.
 
-「仅生成补单链接」与「单独补单」分别创建 `links` 和 `pay` 模式的预览；前者在服务端不调用卡片令牌化或付款确认接口，付款保护暂停时也不解除保护。两种模式都只处理预览绑定的客户。失效账单替换使用 vault 原子事务保存 `replacement-original:<旧会话>` 审计并安装新订单记录，保留人工未扣款确认、历史失败证据、前一个会话和替换次数。有效未支付链接会直接复用；生成新链接后可以在客户详情查看。服务器重启不会自动继续任务。
+## Further documentation
+
+- [Stripe payment outbound pool](docs/payment-outbounds.md) (Chinese)
+- [Explicit public payment-link regeneration](docs/payment-regeneration.md) (English)
+- [xpg — standalone gift link generator](docs/xpg.md) (Chinese)
+
+## Credits and license
+
+Based on [mizorewww/x_gift_bot](https://github.com/mizorewww/x_gift_bot) by mizorewww. Released under the [MIT License](LICENSE).

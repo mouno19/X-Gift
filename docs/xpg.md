@@ -1,6 +1,6 @@
-# xpg —— 独立生成链接站点（xpg.kfcv50.today）
+# xpg —— 独立生成链接站点（xpg.example.com）
 
-xpg 是一个独立于 xgift 主站（xp.kfcv50.today）的**纯链接生成**服务：输入接收方 X 用户名，
+xpg 是一个独立于 xgift 主站（xp.example.com）的**纯链接生成**服务：输入接收方 X 用户名，
 先实时检测接收账号的赠送资格，检测通过后才创建 Stripe 支付链接，把链接发给对方由 TA 自行付款。
 它复用主项目的 checkout 引擎，但**从不代付、不存卡、不消耗兑换码**。
 
@@ -8,7 +8,7 @@ xpg 是一个独立于 xgift 主站（xp.kfcv50.today）的**纯链接生成**�
 - 使用独立的 X 账号与代理出口生成 BD 区域报价（anytls 节点）
 - 访问密钥保护 API，防止任意访客滥用赠送额度
 
-## 线上部署（服务器 nz.mizore.blog）
+## 线上部署（服务器 your-server.example.com）
 
 | 内容 | 路径 |
 |---|---|
@@ -17,8 +17,8 @@ xpg 是一个独立于 xgift 主站（xp.kfcv50.today）的**纯链接生成**�
 | 密码/密钥文件 | `/etc/xpg/vault-password`、`/etc/xpg/passcode`（0600） |
 | 环境配置 | `/etc/xpg/xpg.env` |
 | systemd | `/etc/systemd/system/xpg.service`，监听 `127.0.0.1:8788` |
-| HTTPS | Caddy `/etc/caddy/conf.d/xpg.kfcv50.today.caddy` → 8788 |
-| DNS | Cloudflare 橙云 A 记录 `xpg` → `208.84.103.254` |
+| HTTPS | Caddy `/etc/caddy/conf.d/xpg.example.com.caddy` → 8788 |
+| DNS | Cloudflare 橙云 A 记录 `xpg` → `<你的服务器 IP>` |
 
 `deploy/xpg.env.example` 列出全部环境变量；`deploy/xpg.service` 是 unit 文件模板。
 
@@ -48,7 +48,7 @@ go build -tags with_quic,with_utls -o /opt/xpg/bin/xpg ./cmd/xpg && systemctl re
 # 3) 写入 vault
 { "cookies": {"cookies": [{"name":"auth_token","value":"<token>","domain":".x.com"},
                             {"name":"ct0","value":"<新ct0>","domain":".x.com"}],"origins":[]} } |
-  ssh root@nz.mizore.blog sudo -u xgift /opt/xgift/bin/xgift put --name cookies \
+  ssh root@your-server.example.com sudo -u xgift /opt/xgift/bin/xgift put --name cookies \
   --db /var/lib/xpg/vault.db --password-file /etc/xpg/vault-password
 ```
 
